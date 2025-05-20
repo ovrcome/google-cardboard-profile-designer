@@ -17,7 +17,7 @@
 'use strict';
 
 /*global alert, document, screen, window, init,
-  THREE, WURFL, screenfull, CARDBOARD, ga*/
+  THREE, WURFL, CARDBOARD, ga*/
 
 // meter units
 var CAMERA_HEIGHT = 0;
@@ -30,9 +30,9 @@ var element, container;
 
 var clock = new THREE.Clock();
 
-// Update the message text if on iOS
-if (!screenfull.enabled) {
-  document.getElementById("title").innerHTML = "Rotate phone horizontally";
+// Update the message text if fullscreen is not supported
+if (!document.fullscreenEnabled && !document.webkitFullscreenEnabled && !document.mozFullScreenEnabled) {
+  document.getElementById("title").innerHTML = "Missing fullscreen support";
 }
 
 function setMessageVisible(id, is_visible) {
@@ -41,11 +41,10 @@ function setMessageVisible(id, is_visible) {
 }
 
 function isFullscreen() {
-  var screen_width = Math.max(window.screen.width, window.screen.height);
-  var screen_height = Math.min(window.screen.width, window.screen.height);
-
-  return (screen_width === window.innerWidth) &&
-         (screen_height === window.innerHeight);
+  return document.fullscreenElement ||
+         document.webkitFullscreenElement ||
+         document.mozFullScreenElement ||
+         document.msFullscreenElement;
 }
 
 function resize() {
@@ -74,46 +73,37 @@ function animate(t) {
   window.requestAnimationFrame(animate);
 }
 
-function setOrientationControls(e) {
-  if (!e.alpha) {
-    return;
-  }
+function requestFullscreen() {
+  element.requestFullscreen().then(() => {
+    console.log("Fullscreen requested");
+  }).catch((err) => {
+    console.error("Fullscreen request failed", err);
+    document.getElementById('fullscreen_button').innerHTML = "Fullscreen request failed";
+  });
+}
 
+function setOrientationControls(e) {
   controls = new THREE.DeviceOrientationControls(camera, true);
   controls.connect();
   controls.update();
 
-  if (screenfull.enabled) {
-    // Android
-    window.addEventListener('click', function() {
-      // Must be called here because initiated by user
-      if (screenfull.isFullscreen) {
-        screen.wakelock.release();
-      } else {
-        screen.wakelock.request();
-      }
-
-      screenfull.toggle();
-    });
-
-    document.addEventListener(screenfull.raw.fullscreenchange, function() {
-      if (screenfull.isFullscreen) {
-        // TODO: moz prefix for Firefox
-        screen.orientation.lock('landscape');
-      } else {
-        screen.orientation.unlock();
-      }
-    });
-  } else {
-    // iOS
-    screen.wakelock.request();
-  }
-
   window.removeEventListener('deviceorientation', setOrientationControls, true);
 }
 
+function handleFullscreenChange() {
+  if (isFullscreen()) {
+    // TODO: moz prefix for Firefox
+    screen.orientation.lock('landscape');
+    screen.wakelock.request();
+    setOrientationControls();
+  } else {
+    screen.orientation.unlock();
+    screen.wakelock.release();
+  }
+}
+
 function init_with_cardboard_device(cardboard_device) {
-  console.log(`init_with_cardboard_device: ${cardboard_device}`);
+  console.log("init_with_cardboard_device", cardboard_device);
   renderer = new THREE.WebGLRenderer();
   element = renderer.domElement;
   container = document.getElementById('example');
@@ -137,6 +127,8 @@ function init_with_cardboard_device(cardboard_device) {
   controls.noPan = true;
 
   window.addEventListener('deviceorientation', setOrientationControls, true);
+  document.addEventListener('fullscreenchange', handleFullscreenChange);
+  document.getElementById('fullscreen_button').addEventListener('click', requestFullscreen);
 
   var light = new THREE.HemisphereLight(0x777777, 0x000000, 0.6);
   scene.add(light);
