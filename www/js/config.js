@@ -1,11 +1,12 @@
 var CONFIG = {
-  FIREBASE_APP_URL: 'https://MY_PROJECT.firebaseapp.com',
+  FIREBASE_APP_URL: 'cardboard-profile-geneator.firebaseapp.com',
   // URL of your Firebase instance
-  FIREBASE_DB_URL: 'https://MY_PROJECT.firebaseio.com/',
+  FIREBASE_DB_URL: 'https://cardboard-profile-geneator-default-rtdb.firebaseio.com/',
   // Public key for Google API
-  GOOGLE_API_KEY: 'MY_KEY',
+  GOOGLE_API_KEY: 'AIzaSyDidwhNKYfrSNgXTfm7506WGUwh17MdIrM',
   // Analytics tracking ID (empty string to disable)
   GOOGLE_ANALYTICS_ID: '',
   // Firebase Dynamic Links project, for short links
-  DYNAMIC_URL_BASE: 'https://MY_DYNAMIC_LINKS_PROJECT.page.link',
+  DYNAMIC_URL_BASE: 'https://ovrcome-cardboard-profile-geneator.page.link',
 };
+

@@ -17,7 +17,7 @@
 'use strict';
 
 /*global alert, document, screen, window, init,
-  THREE, WURFL, Firebase, screenfull, CARDBOARD, CONFIG, ga*/
+  THREE, WURFL, screenfull, CARDBOARD, ga*/
 
 // meter units
 var CAMERA_HEIGHT = 0;
@@ -75,16 +75,6 @@ function animate(t) {
   window.requestAnimationFrame(animate);
 }
 
-if (CONFIG.GOOGLE_ANALYTICS_ID) {
-  ga('create', CONFIG.GOOGLE_ANALYTICS_ID, 'auto');
-  ga('send', 'pageview');
-}
-window.onerror = function(message, file, line, col, error) {
-  ga('send', 'exception', {
-    'exDescription': error ? error.stack : message,
-    'exFatal': true});
-};
-
 function setOrientationControls(e) {
   if (!e.alpha) {
     return;
@@ -123,7 +113,8 @@ function setOrientationControls(e) {
   window.removeEventListener('deviceorientation', setOrientationControls, true);
 }
 
-function init_with_cardboard_device(firebase, cardboard_device) {
+function init_with_cardboard_device(cardboard_device) {
+  console.log(`init_with_cardboard_device: ${cardboard_device}`);
   renderer = new THREE.WebGLRenderer();
   element = renderer.domElement;
   container = document.getElementById('example');
@@ -191,13 +182,14 @@ function init_with_cardboard_device(firebase, cardboard_device) {
   barrel_distortion.renderToScreen = true;
   composer.addPass(barrel_distortion);
 
-  firebase.on('value',
-      function (data) {
-        var val = data.val();
-        cardboard_view.device = CARDBOARD.uriToParams(val.params_uri);
-        CARDBOARD.updateBarrelDistortion(barrel_distortion, cardboard_view,
-            CAMERA_NEAR, CAMERA_FAR, val.show_lens_center);
-      });
+  // Listen for device data updates
+  WebSocketClient.on('deviceData', function(data) {
+    if (data && data.params_uri) {
+      cardboard_view.device = CARDBOARD.uriToParams(data.params_uri);
+      console.log("updated params", cardboard_view.device);
+      CARDBOARD.updateBarrelDistortion(barrel_distortion, cardboard_view, CAMERA_NEAR, CAMERA_FAR, true);
+    }
+  });
 
   window.addEventListener('resize', resize, false);
   window.setTimeout(resize, 1);
@@ -222,31 +214,19 @@ function init() {
     return;
   }
   var urlParams = new URLSearchParams(window.location.search);
-  var firebase_token = urlParams.get('u');
-  if (firebase_token) {
-    var config = {
-      apiKey: CONFIG.GOOGLE_API_KEY,
-      authDomain: CONFIG.FIREBASE_APP_URL,
-      databaseURL: CONFIG.FIREBASE_DB_URL
-    };
-    firebase.initializeApp(config);
-
-    var firebase_ref = firebase.database().ref();
-
-    var firebase_user = firebase_ref.child('users').child(firebase_token);
-    // TODO: display "waiting for data"
-    firebase_user.child('params_uri').once('value', function(data) {
-      var device = CARDBOARD.uriToParams(data.val());
-      init_with_cardboard_device(firebase_user, device);
-    });
-    // Maintain list of connections on this session
-    var firebase_connected = firebase_ref.child('.info/connected');
-    firebase_connected.on('value', function(is_connected) {
-      if (is_connected.val()) {
-        // TODO: have connections be list of device names
-        var entry = firebase_user.child('connections').push(true);
-        entry.onDisconnect().remove();
+  var userId = urlParams.get('u');
+  if (userId) {
+    // Set the user ID and get initial data
+    WebSocketClient.channelId = userId;
+    WebSocketClient.on('connected', function(isConnected) {
+      if (isConnected) {
+        WebSocketClient.getDeviceData();
       }
+    });
+    WebSocketClient.once('deviceData', function(data) {
+      var device = CARDBOARD.uriToParams(data.params_uri);
+      console.log("device", device);
+      init_with_cardboard_device(device);
     });
   } else {
     console.log("URL is missing session info:", window.location);

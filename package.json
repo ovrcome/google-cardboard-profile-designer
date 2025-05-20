@@ -1,0 +1,13 @@
+{
+  "name": "google-cardboard-profile-generator",
+  "version": "1.0.0",
+  "description": "Web server with WebSocket support for Google Cardboard Profile Generator",
+  "main": "server.js",
+  "scripts": {
+    "server": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "ws": "^8.16.0"
+  }
+} 

@@ -17,7 +17,7 @@
 'use strict';
 
 /*global alert, btoa, confirm, window, document, XMLSerializer,
-  angular, Firebase, gapi, qrcode, Snap, WURFL, CARDBOARD, CONFIG, ga*/
+  angular, qrcode, Snap, WURFL, CARDBOARD, CONFIG, ga*/
 
 var QR_PIXELS_PER_CELL = 3;
 
@@ -215,18 +215,6 @@ function areArraysEqual(arr1, arr2) {
   return true;
 }
 
-function initGapi() {
-  if (window.initGapi2) {
-    window.initGapi2();
-  } else {
-    // wait for angular controller init
-    window.setTimeout(initGapi, 500);
-  }
-}
-
-if (CONFIG.GOOGLE_ANALYTICS_ID) {
-  ga('create', CONFIG.GOOGLE_ANALYTICS_ID, 'auto');
-}
 // note this error handler will be overridden during angular module init
 window.onerror = function(message, file, line, col, error) {
   ga('send', 'exception', {
@@ -235,7 +223,7 @@ window.onerror = function(message, file, line, col, error) {
 };
 
 angular
-.module('myApp', ['firebase', 'ui.bootstrap', 'ngAnimate', 'ngMaterial', 'ngScrollSpy'])
+.module('myApp', ['ui.bootstrap', 'ngAnimate', 'ngMaterial', 'ngScrollSpy'])
 
 .config(function($mdThemingProvider) {
   $mdThemingProvider.definePalette('cardboard-orange', {
@@ -338,25 +326,39 @@ angular
   };
 })
 
-.controller('myController', ['$scope', '$firebaseObject', '$timeout', '$q', '$window', '$mdDialog',
-  function($scope, $firebaseObject, $timeout, $q, $window, $mdDialog) {
-      var config = {
-        apiKey: CONFIG.GOOGLE_API_KEY,
-        authDomain: CONFIG.FIREBASE_APP_URL,
-        databaseURL: CONFIG.FIREBASE_DB_URL
+.controller('myController', ['$scope', '$timeout', '$q', '$window', '$mdDialog',
+  function($scope, $timeout, $q, $window, $mdDialog) {
+      $scope.data = {};
+      $scope.userId = null;
+      $scope.connected = false;
+      $scope.allow_auto_advance = true;
+
+      // Initialize WebSocket connection
+      WebSocketClient.on('connected', function(isConnected) {
+        $scope.$apply(function() {
+          $scope.connected = isConnected;
+        });
+      });
+
+      // Generate a new user ID if needed
+      if (!$scope.userId) {
+        $scope.userId = WebSocketClient.generateChannelId();
+        WebSocketClient.channelId = $scope.userId;
+      }
+
+      // Update user data
+      $scope.updateData = function() {
+        if ($scope.data) {
+          WebSocketClient.updateDeviceData($scope.data);
+        }
       };
-      firebase.initializeApp(config);
 
-      var firebase_root = firebase.database().ref();
-
-      var gapiDefer = $q.defer();
-      var gapiReady = gapiDefer.promise;
-
-      // TODO: use angular service
-      $window.initGapi2 = function() {
-        gapi.client.setApiKey(CONFIG.GOOGLE_API_KEY);
-        // TODO: propagate API load error
-      };
+      // Watch for data changes
+      $scope.$watch('data', function(newVal, oldVal) {
+        if (newVal !== oldVal) {
+          $scope.updateData();
+        }
+      }, true);
 
       var updateParamQr = function() {
         var qr_div = document.getElementById('params_qrcode');
@@ -459,8 +461,6 @@ angular
       $scope.save = function() {
         // Ensure tray_to_lens_distance has nominal value for best-effort
         // support of apps using older revsion of params proto.
-        // TODO: reference a defaults singleton
-
         if ($scope.params.vertical_alignment ===
           DeviceParams.VerticalAlignmentType.CENTER) {
           $scope.params.tray_to_lens_distance = 0.035;
@@ -473,9 +473,8 @@ angular
           $scope.has_magnet_field_enabled = true;
         }
 
-        $scope.data.update_timestamp = firebase.database.ServerValue.TIMESTAMP;
         $scope.data.params_uri = CARDBOARD.paramsToUri($scope.params);
-        $scope.data.$save();
+        WebSocketClient.updateDeviceData($scope.data);
 
         distortionPlot(
           $scope.params.distortion_coefficients[0],
@@ -549,70 +548,27 @@ angular
         }
       };
 
-      firebase.auth().onAuthStateChanged(function(authData) {
-        if (!authData) {
-          firebase.auth().signInAnonymously().catch(function(error) {
-            if (error) {
-              console.log("Firebase login failed.", error);
-              $scope.alerts.push({ type: 'danger',
-                msg: 'Firebase login failed.'});
-            }
-          });
+      // Initialize the app
+      $timeout(function() {
+        if ($scope.userId) {
+          console.log("Connected with channel ID:", $scope.userId);
 
-          return;
-        }
-        // Note that onAuth will call given function immediately if user is
-        // already authenticated.  Use $timeout to ensure we consistently
-        // run within digest loop.
-        // TODO: use angularfire $onAuth
-        $timeout(function() {
-          if (authData) {
-            console.log("Logged in to Firebase via provider");
+          // Set up remote link for 3D view
+          $timeout(function() {
+            var longUrl = window.location.origin + '/3d.html?u=' + $scope.userId;
+            document.getElementById('remote_link').href = longUrl;
 
-            $scope.firebase_token = authData.uid;
-            var firebase_user = firebase_root.child('users').child(authData.uid);
-            $scope.data = $firebaseObject(firebase_user);
-            // init form data on initial load
-            // TODO: listen for out-of-band changes to params_uri
-            $scope.data.$loaded().then(function(data) {
-              $scope.data.show_lens_center = true;
-              if (!$scope.data.params_uri) {
-                $scope.reset();
-              } else {
-                $scope.set_params_uri();
-              }
-            });
-            // generate remote QR code
-            // Remote link href won't be available until next $digest cycle.
-            $timeout(function () {
-              var longUrl = document.getElementById('remote_link').href;
-              $timeout(function() {
-                var qr = makeQr(2, 'L', longUrl);
-                document.getElementById('remote_qrcode').innerHTML =
+            $timeout(function() {
+              var qr = makeQr(2, 'L', longUrl);
+              document.getElementById('remote_qrcode').innerHTML =
                 qr.createImgTag(QR_PIXELS_PER_CELL);
-                $scope.app_3d_remote_link = longUrl;
-              });
+              $scope.app_3d_remote_link = longUrl;
             });
-
-            // Manage auto-advance from welcome step once remote scene paired.
-            // Advance only allowed when starting from no active connections.
-            firebase_user.child('connections').on('value', function(connections) {
-                if (connections.val()) {
-                  if ($scope.allow_auto_advance &&
-                    $scope.wizard_step === $scope.steps.WELCOME) {
-                    $scope.wizard_step = $scope.steps.WELCOME;
-                }
-                $scope.allow_auto_advance = false;
-              } else {
-                $scope.allow_auto_advance = true;
-              }
-            });
-          } else {
-            console.log("Logged out of Firebase.");
-          }
-        });
-});
-}])
+          });
+        }
+      });
+    }
+])
 
 .config(function($provide) {
   $provide.decorator("$exceptionHandler", ['$delegate', function($delegate) {
@@ -639,7 +595,7 @@ angular
 }])
 
 // Validation for zero distortion coefficients
-.directive('ngNonZero', 
+.directive('ngNonZero',
   function() {
     return {
       restrict: 'A',
