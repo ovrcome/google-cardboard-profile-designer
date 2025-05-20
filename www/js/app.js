@@ -539,7 +539,10 @@ angular
         if ($scope.data.params_uri === '') {
           $scope.save();
         } else {
-          var params = CARDBOARD.uriToParams($scope.data.params_uri);
+          var uri = $scope.data.params_uri;
+          uri = uri.replace('http://', '');
+          uri = uri.replace('https://', '');
+          var params = CARDBOARD.uriToParams(`http://${uri}`);
           if (params) {
             $scope.params = params;
             $scope.save();
