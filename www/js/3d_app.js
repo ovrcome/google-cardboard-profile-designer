@@ -44,8 +44,7 @@ function isFullscreen() {
   var screen_width = Math.max(window.screen.width, window.screen.height);
   var screen_height = Math.min(window.screen.width, window.screen.height);
 
-  return window.document.hasFocus() &&
-         (screen_width === window.innerWidth) &&
+  return (screen_width === window.innerWidth) &&
          (screen_height === window.innerHeight);
 }
 
